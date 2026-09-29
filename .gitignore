@@ -1,0 +1,12 @@
+# macOS
+.DS_Store
+# Configuración local de Claude Code / vista previa
+.claude/
+# Videos y respaldos de partidos: nunca al repositorio
+*.mp4
+*.mov
+*.m4v
+*.webm
+*.mkv
+*.json
+!package.json

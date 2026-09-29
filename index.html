@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beach Scout</title>
+<meta name="description" content="Scouting en video para voleibol de playa: registra acciones, filtra clips por jugador y evaluación, genera reportes y dibuja correcciones. Los videos nunca salen de tu computadora.">
+<meta name="theme-color" content="#0f1418">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/styles.css?v=7">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">🏐 Beach Scout</div>
+  <select id="matchSelect" title="Partido activo"></select>
+  <button id="btnNewMatch" class="btn">+ Partido</button>
+  <button id="btnEditMatch" class="btn ghost" title="Editar equipos y jugadores">Editar</button>
+  <div class="spacer"></div>
+  <nav class="tabs">
+    <button class="tab active" data-view="scout">Scouting</button>
+    <button class="tab" data-view="corr">Correcciones</button>
+    <button class="tab" data-view="report">Reporte</button>
+  </nav>
+  <div class="spacer"></div>
+  <button id="btnKeys" class="btn ghost" title="Configurar teclas de scouting">⌨️ Teclas</button>
+  <button id="btnImport" class="btn ghost">Importar</button>
+  <button id="btnExport" class="btn ghost">Exportar ▾</button>
+  <div id="exportMenu" class="menu hidden">
+    <button data-export="json">Partido (.json)</button>
+    <button data-export="csv">Acciones (.csv)</button>
+  </div>
+  <input type="file" id="importFile" accept=".json,application/json" hidden>
+</header>
+
+<main id="viewScout" class="view scout">
+  <section class="left">
+    <div class="video-wrap">
+      <video id="video" preload="auto"></video>
+      <label id="videoDrop" class="video-drop">
+        <input type="file" id="videoFile" accept="video/*" hidden>
+        <div>
+          <div class="big">Arrastra el video aquí o haz clic para abrirlo</div>
+          <div class="muted" id="videoHint">MP4 / MOV. El video se queda en tu computadora.</div>
+        </div>
+      </label>
+      <div id="clipBadge" class="clip-badge hidden"></div>
+    </div>
+    <div class="controls">
+      <button class="btn icon" data-seek="-5" title="-5 s (Shift+←)">⏪5</button>
+      <button class="btn icon" data-seek="-2" title="-2 s (←)">◀2</button>
+      <button class="btn icon" data-seek="-0.04" title="Frame atrás (,)">◁</button>
+      <button id="btnPlay" class="btn icon play" title="Play / Pausa (Espacio)">▶</button>
+      <button class="btn icon" data-seek="0.04" title="Frame adelante (.)">▷</button>
+      <button class="btn icon" data-seek="2" title="+2 s (→)">2▶</button>
+      <button class="btn icon" data-seek="5" title="+5 s (Shift+→)">5⏩</button>
+      <span id="timeLabel" class="time">00:00.0 / 00:00</span>
+      <input id="seekBar" type="range" min="0" max="1000" value="0" class="seek">
+      <select id="speedSelect" title="Velocidad ([ y ])">
+        <option value="0.25">0.25x</option><option value="0.5">0.5x</option>
+        <option value="0.75">0.75x</option><option value="1" selected>1x</option>
+        <option value="1.5">1.5x</option><option value="2">2x</option><option value="4">4x</option>
+      </select>
+      <button id="btnCapture" class="btn primary small" title="Capturar fotograma para dibujar correcciones (C)">📷 Capturar</button>
+      <button id="btnChangeVideo" class="btn ghost small">Cambiar video</button>
+    </div>
+    <div class="scoreboard" id="scoreboard"></div>
+  </section>
+
+  <section class="right">
+    <nav class="subtabs">
+      <button class="subtab active" data-panel="entry">Registrar</button>
+      <button class="subtab" data-panel="clips">Clips</button>
+    </nav>
+
+    <!-- REGISTRO -->
+    <div id="panelEntry" class="panel">
+      <div class="code-row">
+        <input id="codeInput" autocomplete="off" spellcheck="false" placeholder="Código: *1R#  a2AC+  3S=  *P">
+        <span id="pendingTime" class="pending"></span>
+      </div>
+      <div id="codePreview" class="code-preview muted">Escribe un código y Enter, o usa los botones.</div>
+
+      <div class="group-label">Jugador</div>
+      <div id="playerButtons" class="btn-grid four"></div>
+
+      <div class="group-label">Fundamento</div>
+      <div id="skillButtons" class="btn-grid skills"></div>
+
+      <div class="group-label">Tipo <span class="muted">(opcional)</span></div>
+      <div id="typeButtons" class="btn-grid types"></div>
+
+      <div class="group-label">Evaluación <span class="muted">(registra la acción)</span></div>
+      <div id="evalButtons" class="btn-grid evals"></div>
+
+      <div class="row gap">
+        <button id="btnPointHome" class="btn small">Punto local</button>
+        <button id="btnPointAway" class="btn small">Punto visita</button>
+        <div class="spacer"></div>
+        <label class="small muted">Set
+          <select id="setSelect"><option>1</option><option>2</option><option>3</option></select>
+        </label>
+        <button id="btnUndo" class="btn small ghost" title="Ctrl/Cmd+Z">Deshacer</button>
+      </div>
+
+      <div class="group-label row">Acciones <span id="actionCount" class="muted"></span></div>
+      <div id="actionList" class="action-list"></div>
+    </div>
+
+    <!-- CLIPS -->
+    <div id="panelClips" class="panel hidden">
+      <div class="filters">
+        <div class="filter">
+          <div class="group-label">Jugador</div>
+          <div id="fPlayers" class="chips"></div>
+        </div>
+        <div class="filter">
+          <div class="group-label">Fundamento</div>
+          <div id="fSkills" class="chips"></div>
+        </div>
+        <div class="filter">
+          <div class="group-label">Evaluación</div>
+          <div id="fEvals" class="chips"></div>
+        </div>
+        <div class="filter">
+          <div class="group-label">Tipo / Set</div>
+          <div id="fTypes" class="chips"></div>
+          <div id="fSets" class="chips"></div>
+        </div>
+        <div class="row gap small">
+          <label>Antes <input id="preSec" type="number" step="0.5" min="0" value="4"> s</label>
+          <label>Después <input id="postSec" type="number" step="0.5" min="0" value="3"> s</label>
+          <label><input id="skipGap" type="checkbox" checked> Unir clips que se solapan</label>
+        </div>
+      </div>
+      <div class="row gap">
+        <button id="btnPlayAll" class="btn primary">▶ Reproducir clips</button>
+        <button id="btnStopAll" class="btn ghost">■ Detener</button>
+        <button id="btnClearFilters" class="btn ghost small">Limpiar filtros</button>
+        <div class="spacer"></div>
+        <button id="btnFfmpeg" class="btn ghost small" title="Script para cortar y unir los clips en un solo video">Exportar video (ffmpeg)</button>
+      </div>
+      <div id="clipSummary" class="clip-summary"></div>
+      <div id="clipList" class="action-list"></div>
+    </div>
+  </section>
+</main>
+
+<main id="viewReport" class="view report hidden">
+  <div class="report-toolbar">
+    <label>Partidos
+      <select id="reportScope">
+        <option value="current">Partido actual</option>
+        <option value="all">Todos los partidos</option>
+      </select>
+    </label>
+    <label>Set
+      <select id="reportSet"><option value="">Todos</option><option>1</option><option>2</option><option>3</option></select>
+    </label>
+    <div class="spacer"></div>
+    <button id="btnPrint" class="btn">Imprimir / PDF</button>
+  </div>
+  <div id="reportBody"></div>
+</main>
+
+<main id="viewCorr" class="view report hidden">
+  <div class="report-toolbar">
+    <label>Partidos
+      <select id="corrScope">
+        <option value="current">Partido actual</option>
+        <option value="all">Todos los partidos</option>
+      </select>
+    </label>
+    <label>Jugador <select id="corrPlayer"></select></label>
+    <div class="spacer"></div>
+    <button id="btnCorrPrint" class="btn">Imprimir / PDF</button>
+  </div>
+  <div id="corrBody"></div>
+</main>
+
+<dialog id="annotDialog" class="annot">
+  <div class="annot-bar">
+    <div id="annotTools" class="annot-tools"></div>
+    <div id="annotColors" class="annot-colors"></div>
+    <label class="small muted">Grosor <input id="annotWidth" type="range" min="2" max="12" step="1"></label>
+    <label class="small muted"><input id="annotDash" type="checkbox"> Punteada</label>
+    <button id="annotDelShape" class="btn small ghost" title="Supr">Borrar figura</button>
+    <button id="annotUndo" class="btn small ghost" title="Cmd/Ctrl+Z">Deshacer</button>
+    <button id="annotClear" class="btn small ghost">Limpiar todo</button>
+  </div>
+  <div class="annot-main">
+    <div class="annot-stage">
+      <canvas id="annotCanvas"></canvas>
+      <input id="annotText" class="annot-text hidden" placeholder="Escribe y Enter">
+    </div>
+    <aside class="annot-side">
+      <div class="group-label">Íconos</div>
+      <div id="annotIcons" class="annot-icons"></div>
+      <label>Jugador <select id="annotPlayer"></select></label>
+      <label>Título <input id="annotTitle" placeholder="Ej. Plataforma de recepción"></label>
+      <label>Corrección / comentario <textarea id="annotNote" rows="5" placeholder="Qué hizo, qué debe corregir y cómo"></textarea></label>
+      <div class="small muted">Acción: <span id="annotAction"></span></div>
+      <div class="annot-actions">
+        <button id="annotSave" class="btn primary">Guardar</button>
+        <button id="annotPng" class="btn ghost">Descargar PNG</button>
+        <button id="annotCancel" class="btn ghost">Cerrar</button>
+        <button id="annotDelete" class="btn danger ghost">Eliminar</button>
+      </div>
+    </aside>
+  </div>
+</dialog>
+
+<dialog id="matchDialog">
+  <form method="dialog" id="matchForm">
+    <h2 id="matchDialogTitle">Nuevo partido</h2>
+    <div class="form-grid">
+      <label>Torneo / fase <input name="name" placeholder="Ej. Tour Sudamericano – Cuartos"></label>
+      <label>Fecha <input name="date" type="date"></label>
+    </div>
+    <div class="teams-form">
+      <fieldset class="home">
+        <legend>Equipo local (*)</legend>
+        <label>Nombre <input name="h_name" required placeholder="Ej. MEX 1"></label>
+        <label>Jugador 1 <input name="h_p1" required></label>
+        <label>Jugador 2 <input name="h_p2" required></label>
+      </fieldset>
+      <fieldset class="away">
+        <legend>Equipo visita (a)</legend>
+        <label>Nombre <input name="a_name" required placeholder="Ej. BRA 2"></label>
+        <label>Jugador 1 <input name="a_p1" required></label>
+        <label>Jugador 2 <input name="a_p2" required></label>
+      </fieldset>
+    </div>
+    <div class="row gap">
+      <button type="button" id="btnDeleteMatch" class="btn danger ghost">Eliminar partido</button>
+      <div class="spacer"></div>
+      <button type="button" id="btnCancelMatch" class="btn ghost">Cancelar</button>
+      <button value="ok" class="btn primary">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="keysDialog" class="keys-dialog">
+  <h2>⌨️ Teclas de scouting</h2>
+  <p class="small muted">Haz clic en una tecla y presiona la nueva. El registro va por etapas
+    (<b>jugador → fundamento → tipo → evaluación</b>): una tecla sólo debe ser única dentro de su etapa,
+    por eso «1» puede ser un jugador y también «doble positiva». Esc y ⌫ son fijas.</p>
+  <div id="keysConflicts" class="keys-conflicts"></div>
+  <div id="keysBody" class="keys-body"></div>
+  <div class="row gap">
+    <button type="button" id="btnKeysReset" class="btn ghost">Restaurar por defecto</button>
+    <button type="button" id="btnKeysExport" class="btn ghost">Exportar</button>
+    <button type="button" id="btnKeysImport" class="btn ghost">Importar</button>
+    <input type="file" id="keysFile" accept=".json,application/json" hidden>
+    <div class="spacer"></div>
+    <form method="dialog"><button class="btn primary">Listo</button></form>
+  </div>
+</dialog>
+
+<dialog id="helpDialog">
+  <h2>Códigos de scouting</h2>
+  <div id="helpBody"></div>
+  <form method="dialog"><button class="btn primary">Cerrar</button></form>
+</dialog>
+<button id="btnHelp" class="help-fab" title="Ayuda de códigos (?)">?</button>
+
+<div id="toast" class="toast"></div>
+
+<script src="js/model.js?v=7"></script>
+<script src="js/keymap.js?v=7"></script>
+<script src="js/db.js?v=7"></script>
+<script src="js/annotate.js?v=7"></script>
+<script src="js/app.js?v=7"></script>
+</body>
+</html>
