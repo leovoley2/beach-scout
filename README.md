@@ -22,6 +22,8 @@ aunque uses la versión web, se reproduce desde tu computadora.
 3. **Registrar**: escribe códigos mientras corre el video (el tiempo se toma al teclear el primer carácter) o usa los botones Jugador → Fundamento → (Tipo) → Evaluación.
 4. **Clips**: filtra por jugador / fundamento / evaluación / tipo / set y dale a *Reproducir clips*.
    Ej.: Juan + Recepción + `=` → todas las recepciones doble negativas de Juan, una tras otra.
+   Cada fundamento tiene su propio margen (*⏱ Duración de clips por fundamento*): por defecto un ataque
+   arranca 2 s antes, así se ve el armado y no el saque rival.
 5. **Reporte**: tabla por equipo y por jugador con `# + ! - / =`, Pos%, #%, Err%, Eficiencia,
    side-out y break point. **Clic en cualquier número abre esos clips.** Imprimible a PDF.
 

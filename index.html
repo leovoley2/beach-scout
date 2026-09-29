@@ -7,7 +7,7 @@
 <meta name="description" content="Scouting en video para voleibol de playa: registra acciones, filtra clips por jugador y evaluación, genera reportes y dibuja correcciones. Los videos nunca salen de tu computadora.">
 <meta name="theme-color" content="#0f1418">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/styles.css?v=7">
+<link rel="stylesheet" href="css/styles.css?v=8">
 </head>
 <body>
 <header class="topbar">
@@ -126,11 +126,14 @@
           <div id="fTypes" class="chips"></div>
           <div id="fSets" class="chips"></div>
         </div>
-        <div class="row gap small">
-          <label>Antes <input id="preSec" type="number" step="0.5" min="0" value="4"> s</label>
-          <label>Después <input id="postSec" type="number" step="0.5" min="0" value="3"> s</label>
-          <label><input id="skipGap" type="checkbox" checked> Unir clips que se solapan</label>
-        </div>
+        <details class="clip-times">
+          <summary>⏱ Duración de clips por fundamento</summary>
+          <p class="small muted">Cada clip va desde <b>Antes</b> segundos previos al momento registrado (cuando pulsas el jugador)
+            hasta <b>Después</b> segundos posteriores.</p>
+          <div id="clipTimesGrid" class="clip-times-grid"></div>
+          <button type="button" id="btnClipReset" class="btn ghost small">Restaurar tiempos</button>
+        </details>
+        <label class="small"><input id="skipGap" type="checkbox" checked> Unir clips que se solapan</label>
       </div>
       <div class="row gap">
         <button id="btnPlayAll" class="btn primary">▶ Reproducir clips</button>
@@ -265,10 +268,10 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="js/model.js?v=7"></script>
-<script src="js/keymap.js?v=7"></script>
-<script src="js/db.js?v=7"></script>
-<script src="js/annotate.js?v=7"></script>
-<script src="js/app.js?v=7"></script>
+<script src="js/model.js?v=8"></script>
+<script src="js/keymap.js?v=8"></script>
+<script src="js/db.js?v=8"></script>
+<script src="js/annotate.js?v=8"></script>
+<script src="js/app.js?v=8"></script>
 </body>
 </html>

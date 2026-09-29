@@ -10,7 +10,14 @@
   const EV_COLOR = { '#': 'var(--e-dp)', '+': 'var(--e-p)', '!': 'var(--e-n)', '-': 'var(--e-m)', '/': 'var(--e-s)', '=': 'var(--e-dm)' };
 
   // ---------------------------------------------------------------- estado
-  let store = { matches: [], currentId: null, settings: { pre: 4, post: 3, merge: true } };
+  // Segundos antes/después del momento registrado, por fundamento. En playa un rally es muy rápido
+  // (saque → recepción → armado → ataque en ~4 s), así que un margen único haría que el clip de un
+  // ataque empiece en el saque rival.
+  const CLIP_DEFAULT = {
+    S: { pre: 2, post: 3 }, R: { pre: 2, post: 2 }, E: { pre: 1.5, post: 2 }, A: { pre: 2, post: 2.5 },
+    B: { pre: 2, post: 2 }, D: { pre: 2, post: 2 }, F: { pre: 2, post: 2 }, P: { pre: 3, post: 1 },
+  };
+  let store = { matches: [], currentId: null, settings: { clip: JSON.parse(JSON.stringify(CLIP_DEFAULT)), merge: true } };
   const ui = {
     view: 'scout', panel: 'entry',
     sel: { team: null, player: null, skill: null, type: '' },
@@ -58,6 +65,10 @@
       }
     } catch (e) { console.warn('No se pudo leer el almacenamiento', e); }
     store.settings.keymap = Keymap.merge(store.settings.keymap);
+    const clip = JSON.parse(JSON.stringify(CLIP_DEFAULT));
+    for (const k of Object.keys(clip)) Object.assign(clip[k], (store.settings.clip || {})[k]);
+    store.settings.clip = clip;
+    delete store.settings.pre; delete store.settings.post; // margen único de versiones anteriores
   }
   let saveTimer = null;
   function flush() {
@@ -95,6 +106,7 @@
     renderActions();
     renderScore();
     renderFilters();
+    renderClipTimes();
     renderClips();
     if (ui.view === 'report') renderReport();
     if (ui.view === 'corr') renderCorrections();
@@ -334,14 +346,18 @@
       && (!f.sets.size || f.sets.has(String(a.set))));
   }
 
+  function clipWindow(a) { return store.settings.clip[a && a.skill] || { pre: 2, post: 2 }; }
+
   function clipRanges(actions) {
-    const { pre, post, merge } = store.settings;
+    const { merge } = store.settings;
     const ranges = [];
     for (const a of [...actions].sort((x, y) => x.t - y.t)) {
-      const start = Math.max(0, a.t - pre), end = a.t + post;
+      const w = clipWindow(a);
+      const start = Math.max(0, a.t - w.pre), end = a.t + w.post;
       const last = ranges[ranges.length - 1];
-      if (merge && last && start <= last.end) { last.end = Math.max(last.end, end); last.actions.push(a); }
-      else ranges.push({ start, end, actions: [a] });
+      if (merge && last && start <= last.end) {
+        last.start = Math.min(last.start, start); last.end = Math.max(last.end, end); last.actions.push(a);
+      } else ranges.push({ start, end, actions: [a] });
     }
     return ranges;
   }
@@ -361,9 +377,14 @@
       Object.entries(M.TYPES[s]).map(([k, v]) => chip(s + k, `${M.SKILLS[s].short}: ${v}`, f.types.has(s + k)))).join('');
     const sets = [...new Set(m.actions.map((a) => a.set))].sort();
     $('#fSets').innerHTML = sets.map((s) => chip(String(s), `Set ${s}`, f.sets.has(String(s)))).join('');
-    $('#preSec').value = store.settings.pre;
-    $('#postSec').value = store.settings.post;
     $('#skipGap').checked = store.settings.merge;
+  }
+
+  function renderClipTimes() {
+    const c = store.settings.clip;
+    const num = (sk, k) => `<input type="number" step="0.5" min="0" max="15" data-skill="${sk}" data-k="${k}" value="${c[sk][k]}">`;
+    $('#clipTimesGrid').innerHTML = '<span></span><b>Antes</b><b>Después</b>' +
+      M.SKILL_ORDER.map((sk) => `<span>${M.SKILLS[sk].name}</span>${num(sk, 'pre')}${num(sk, 'post')}`).join('');
   }
 
   function renderClips() {
@@ -414,7 +435,8 @@
   }
   function playSingle(a) {
     if (!video.src) { toast('Primero abre el video del partido'); return; }
-    ui.playlist = [{ start: Math.max(0, a.t - store.settings.pre), end: a.t + store.settings.post, actions: [a] }];
+    const w = clipWindow(a);
+    ui.playlist = [{ start: Math.max(0, a.t - w.pre), end: a.t + w.post, actions: [a] }];
     ui.clipIdx = 0; ui.playlistSource = null; playClip();
   }
 
@@ -692,7 +714,9 @@
     setView('scout');
     const m = match();
     if (!video.src) { toast(`Abre el video "${m.videoName || 'del partido'}"`); return; }
-    ui.playlist = [{ start: Math.max(0, rec.t - store.settings.pre), end: rec.t + store.settings.post, actions: [] }];
+    const linked = rec.actionId ? m.actions.find((x) => x.id === rec.actionId) : null;
+    const w = clipWindow(linked);
+    ui.playlist = [{ start: Math.max(0, rec.t - w.pre), end: rec.t + w.post, actions: [] }];
     ui.clipIdx = 0;
     ui.playlistSource = null;
     video.currentTime = ui.playlist[0].start; play();
@@ -967,7 +991,7 @@
       } else if (op === 'play') {
         playSingle(a);
       } else if (!e.target.classList.contains('c') && video.src) {
-        stopPlaylist(); video.currentTime = Math.max(0, a.t - 2);
+        stopPlaylist(); video.currentTime = Math.max(0, a.t - clipWindow(a).pre);
       }
     });
     $('#actionList').addEventListener('keydown', (e) => {
@@ -997,13 +1021,17 @@
     });
     chipHandler('#fPlayers', 'players'); chipHandler('#fSkills', 'skills'); chipHandler('#fEvals', 'evals');
     chipHandler('#fTypes', 'types'); chipHandler('#fSets', 'sets');
-    const settingsChanged = () => {
-      store.settings.pre = Math.max(0, Number($('#preSec').value) || 0);
-      store.settings.post = Math.max(0, Number($('#postSec').value) || 0);
-      store.settings.merge = $('#skipGap').checked;
+    $('#skipGap').onchange = () => { store.settings.merge = $('#skipGap').checked; save(); stopPlaylist(); renderClips(); };
+    $('#clipTimesGrid').addEventListener('change', (e) => {
+      const inp = e.target.closest('[data-skill]'); if (!inp) return;
+      const v = Math.max(0, Math.min(15, Number(inp.value) || 0));
+      store.settings.clip[inp.dataset.skill][inp.dataset.k] = v; inp.value = v;
       save(); stopPlaylist(); renderClips();
+    });
+    $('#btnClipReset').onclick = () => {
+      store.settings.clip = JSON.parse(JSON.stringify(CLIP_DEFAULT));
+      save(); stopPlaylist(); renderClipTimes(); renderClips(); toast('Tiempos de clip restaurados');
     };
-    $('#preSec').onchange = settingsChanged; $('#postSec').onchange = settingsChanged; $('#skipGap').onchange = settingsChanged;
     $('#btnPlayAll').onclick = () => startPlaylist(0);
     $('#btnStopAll').onclick = () => { stopPlaylist(); video.pause(); };
     $('#btnClearFilters').onclick = () => { Object.values(ui.filters).forEach((s) => s.clear()); stopPlaylist(); renderFilters(); renderClips(); };
