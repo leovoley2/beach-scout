@@ -5,7 +5,7 @@ evaluaciones de Data Volley (`# + ! - / =`).
 
 ## Cómo abrirla
 
-- **En la web:** abre la dirección publicada (GitHub Pages / Vercel) en Chrome o Safari.
+- **En la web:** **https://beach-scout.vercel.app** (también en https://leovoley2.github.io/beach-scout/) — Chrome o Safari.
 - **Sin internet:** doble clic en `index.html`.
 
 Es una página estática (HTML + JS, sin servidor ni dependencias). El video **no se sube a ningún lado**:
@@ -92,6 +92,7 @@ corta y une los clips filtrados en un solo MP4 (requiere `brew install ffmpeg`).
 Cualquier hosting estático sirve; no hay paso de compilación.
 
 - **GitHub Pages:** *Settings → Pages → Deploy from a branch → `main` / `(root)`*.
-- **Vercel / Netlify:** importar el repositorio, sin comando de build, carpeta de salida `/`.
+- **Vercel** (actual): proyecto `beach-scout` enlazado a este repo; cada push a `main` se publica solo.
+- **Netlify / otros:** importar el repositorio, sin comando de build, carpeta de salida `/`.
 
 Al cambiar archivos JS/CSS, sube el número `?v=` en `index.html` para que los navegadores no usen la versión en caché.
