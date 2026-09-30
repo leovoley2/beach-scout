@@ -17,13 +17,16 @@
     S: { pre: 2, post: 3 }, R: { pre: 2, post: 2 }, E: { pre: 1.5, post: 2 }, A: { pre: 2, post: 2.5 },
     B: { pre: 2, post: 2 }, D: { pre: 2, post: 2 }, F: { pre: 2, post: 2 }, P: { pre: 3, post: 1 },
   };
-  let store = { matches: [], currentId: null, settings: { clip: JSON.parse(JSON.stringify(CLIP_DEFAULT)), merge: true } };
+  let store = { matches: [], currentId: null, settings: { clip: JSON.parse(JSON.stringify(CLIP_DEFAULT)), merge: true, askDir: { S: true, A: true } } };
   const ui = {
     view: 'scout', panel: 'entry',
     sel: { team: null, player: null, skill: null, type: '' },
     pendingTime: null,
     undo: [],
-    filters: { players: new Set(), skills: new Set(), evals: new Set(), types: new Set(), sets: new Set() },
+    filters: { players: new Set(), skills: new Set(), evals: new Set(), types: new Set(), sets: new Set(), zones: new Set() },
+    courtTarget: null,   // acción que se edita en la cancha
+    courtWaiting: false, // esperando la dirección de un saque/ataque recién registrado
+    courtDrag: null,
     playlist: null, clipIdx: 0,
     captures: [],
     videoName: '',        // archivo cargado ahora en el reproductor
@@ -69,6 +72,7 @@
     for (const k of Object.keys(clip)) Object.assign(clip[k], (store.settings.clip || {})[k]);
     store.settings.clip = clip;
     delete store.settings.pre; delete store.settings.post; // margen único de versiones anteriores
+    store.settings.askDir = Object.assign({ S: true, A: true }, store.settings.askDir);
   }
   let saveTimer = null;
   function flush() {
@@ -108,6 +112,7 @@
     renderFilters();
     renderClipTimes();
     renderClips();
+    renderCourtInput();
     if (ui.view === 'report') renderReport();
     if (ui.view === 'corr') renderCorrections();
     const m = match();
@@ -171,6 +176,7 @@
     ui.sel.team = team; ui.sel.player = player;
     setPanel('entry');
     renderEntryButtons();
+    if (ui.courtWaiting) { ui.courtWaiting = false; renderCourtInput(); } // la siguiente acción omite la dirección
   }
   function selectSkill(skill) {
     capturePending();
@@ -204,6 +210,7 @@
     ui.sel = { team: null, player: null, skill: null, type: '' };
     clearPending();
     renderEntryButtons();
+    if (ui.courtWaiting) { ui.courtWaiting = false; renderCourtInput(); }
   }
 
   function addAction(parsed) {
@@ -213,20 +220,107 @@
       id: uid(), t: Math.round(t * 100) / 100, set: m.currentSet,
       team: parsed.team, player: parsed.player, skill: parsed.skill, type: parsed.type || '', eval: parsed.eval || '',
     };
+    if (parsed.from) a.from = parsed.from;
+    if (parsed.to) a.to = parsed.to;
     m.actions.push(a);
     m.actions.sort((x, y) => x.t - y.t);
     ui.undo.push(a.id);
     ui.sel = { team: null, player: null, skill: null, type: '' };
     clearPending();
     save();
-    renderEntryButtons(); renderActions(); renderScore(); renderFilters(); renderClips();
+    if (a.skill !== 'P') { ui.courtTarget = a.id; ui.courtWaiting = !!store.settings.askDir[a.skill] && !a.to; }
+    renderEntryButtons(); renderActions(); renderScore(); renderFilters(); renderClips(); renderCourtInput();
     toast(`${M.actionCode(a)}  ·  ${describe(m, a)}`);
   }
 
   function describe(m, a) {
     if (a.skill === 'P') return `Punto ${teamName(m, a.team)}`;
     const type = a.type ? ' ' + M.TYPES[a.skill][a.type] : '';
-    return `${playerName(m, a.team, a.player)} · ${M.SKILLS[a.skill].name}${type} · ${M.EVAL_NAME[a.eval]}`;
+    return `${playerName(m, a.team, a.player)} · ${M.SKILLS[a.skill].name}${type} · ${M.EVAL_NAME[a.eval]}${zoneText(m, a)}`;
+  }
+
+  // ------------------------------------------------------ cancha / zonas
+  // Puntos de una acción. La recepción sin punto propio toma el destino del saque rival que recibe
+  // (y la defensa, el del ataque rival), así no hace falta marcar dos veces.
+  function locOf(m, a) {
+    const out = { from: a.from || null, to: a.to || null };
+    if (!out.from && (a.skill === 'R' || a.skill === 'D')) {
+      const prevSkill = a.skill === 'R' ? 'S' : 'A';
+      let best = null;
+      for (const b of m.actions) {
+        if (b.skill !== prevSkill || b.team === a.team || b.set !== a.set || !b.to) continue;
+        const dt = a.t - b.t;
+        if (dt >= -0.5 && dt <= 4 && (!best || b.t > best.t)) best = b;
+      }
+      if (best) { out.from = best.to; out.derived = true; }
+    }
+    return out;
+  }
+  // Zona "principal": destino en saque/ataque, lugar en el resto.
+  function destZone(m, a) {
+    const l = locOf(m, a);
+    return M.DIRECTIONAL[a.skill] ? M.zoneOf(l.to) : M.zoneOf(l.from);
+  }
+  function zoneText(m, a) {
+    if (M.DIRECTIONAL[a.skill]) {
+      if (a.to) return ` · ${a.from ? 'Z' + M.zoneOf(a.from) : ''}→Z${M.zoneOf(a.to)}${M.isOut(a.to) ? ' (fuera)' : ''}`;
+      return a.from ? ` · Z${M.zoneOf(a.from)}→?` : '';
+    }
+    const l = locOf(m, a);
+    return l.from ? ` · Z${M.zoneOf(l.from)}` : '';
+  }
+  // Para mapas de análisis: el equipo que ejecuta siempre abajo.
+  const toActorView = (p, team) => (p && team === 1 ? Court.flipP(p) : p);
+
+  function courtTargetAction(m) {
+    return m.actions.find((x) => x.id === ui.courtTarget) || [...m.actions].reverse().find((x) => x.skill !== 'P') || null;
+  }
+
+  function renderCourtInput(preview) {
+    const m = match(); if (!m) return;
+    const a = courtTargetAction(m);
+    const items = [];
+    if (a) {
+      // contexto del rally: acciones de hasta 6 s antes
+      for (const b of m.actions) {
+        if (b === a || b.skill === 'P' || b.set !== a.set || a.t - b.t > 6 || b.t > a.t) continue;
+        const l = locOf(m, b);
+        if (l.from || l.to) items.push({ from: l.from, to: l.to, ev: b.eval, faded: true });
+      }
+      const l = locOf(m, a);
+      if (l.from || l.to) items.push({ from: l.from, to: l.to, ev: a.eval, strong: true });
+    }
+    $('#courtSvgWrap').innerHTML = Court.svg({
+      uid: 'ci', flip: !!m.courtFlip, items, preview,
+      labels: { top: teamName(m, 1), bottom: teamName(m, 0) },
+    });
+    $('#courtBox').classList.toggle('waiting', ui.courtWaiting);
+    $('#courtTarget').innerHTML = a
+      ? `${evBadge(a.eval)} <b>${esc(M.actionCode(a))}</b> ${esc(describe(m, a))} <span class="muted">${fmtTime(a.t)}</span>`
+      : '<span class="muted">Registra una acción para marcar su dirección.</span>';
+    $('#courtHint').textContent = !a ? '' : M.DIRECTIONAL[a.skill]
+      ? (ui.courtWaiting ? '👉 Arrastra desde dónde sale hasta dónde va (un clic = sólo destino). Esc o la siguiente acción la omite.'
+        : 'Arrastra inicio → destino, o clic para el destino.')
+      : 'Clic donde ocurrió la acción.';
+    $('#askS').checked = !!store.settings.askDir.S; $('#askA').checked = !!store.settings.askDir.A;
+  }
+
+  function setCourtPoints(from, to) {
+    const m = match(); const a = m && courtTargetAction(m);
+    if (!a) { toast('Primero registra una acción'); return; }
+    const dist = from && to ? Math.hypot(to.x - from.x, to.y - from.y) : 0;
+    if (M.DIRECTIONAL[a.skill]) {
+      if (dist > 0.7) { a.from = from; a.to = to; } else a.to = to;
+      // aviso si parece dibujada al revés (equipos cambiaron de lado)
+      const ownBottom = a.team === 0;
+      const startOwn = a.from ? (ownBottom ? a.from.y > M.COURT.NET - 1 : a.from.y < M.COURT.NET + 1) : true;
+      const endOpp = ownBottom ? a.to.y < M.COURT.NET : a.to.y > M.COURT.NET;
+      if (!startOwn || !endOpp) toast('La dirección parece al revés: si los equipos cambiaron de lado, pulsa ⇅ Invertir cancha');
+    } else {
+      a.from = to; delete a.to;
+    }
+    ui.courtTarget = a.id; ui.courtWaiting = false;
+    save(); renderCourtInput(); renderActions(); renderFilters(); renderClips();
   }
 
   function evBadge(e) { return e ? `<span class="ev ev-${EV_CLASS[e]}">${esc(e)}</span>` : ''; }
@@ -241,6 +335,7 @@
         <input class="c" value="${esc(M.actionCode(a))}" title="Edita el código y Enter">
         <span class="d">${evBadge(a.eval)} ${capCount(a.id) ? `📷${capCount(a.id)} ` : ''}${esc(describe(m, a))}</span>
         <span class="ops">
+          <button data-op="court" title="Marcar dirección / zona en la cancha">🎯</button>
           <button data-op="note" title="Nota / corrección">💬</button>
           <button data-op="retime" title="Mover al tiempo actual del video">⏱</button>
           <button data-op="play" title="Ver clip">▶</button>
@@ -343,7 +438,8 @@
       && (!f.skills.size || f.skills.has(a.skill))
       && (!f.evals.size || f.evals.has(a.eval))
       && (!f.types.size || f.types.has(a.skill + a.type))
-      && (!f.sets.size || f.sets.has(String(a.set))));
+      && (!f.sets.size || f.sets.has(String(a.set)))
+      && (!f.zones.size || f.zones.has(String(destZone(m, a)))));
   }
 
   function clipWindow(a) { return store.settings.clip[a && a.skill] || { pre: 2, post: 2 }; }
@@ -377,6 +473,7 @@
       Object.entries(M.TYPES[s]).map(([k, v]) => chip(s + k, `${M.SKILLS[s].short}: ${v}`, f.types.has(s + k)))).join('');
     const sets = [...new Set(m.actions.map((a) => a.set))].sort();
     $('#fSets').innerHTML = sets.map((s) => chip(String(s), `Set ${s}`, f.sets.has(String(s)))).join('');
+    $('#fZones').innerHTML = [4, 3, 2, 7, 8, 9, 5, 6, 1].map((z) => chip(String(z), `Z${z}`, f.zones.has(String(z)))).join('');
     $('#skipGap').checked = store.settings.merge;
   }
 
@@ -387,9 +484,28 @@
       M.SKILL_ORDER.map((sk) => `<span>${M.SKILLS[sk].name}</span>${num(sk, 'pre')}${num(sk, 'post')}`).join('');
   }
 
+  // Mapa de los clips filtrados: quien ejecuta siempre abajo, zonas sombreadas según la frecuencia.
+  function mapFor(m, list, uid, clickable) {
+    const items = [], heat = { top: {}, bottom: {} };
+    for (const a of list) {
+      const l = locOf(m, a);
+      if (!l.from && !l.to) continue;
+      const from = toActorView(l.from, a.team), to = toActorView(l.to, a.team);
+      items.push({ id: clickable ? a.id : '', from, to, ev: a.eval });
+      const p = M.DIRECTIONAL[a.skill] ? to : from;
+      if (p) { const side = p.y < M.COURT.NET ? 'top' : 'bottom'; const z = M.zoneOf(p); heat[side][z] = (heat[side][z] || 0) + 1; }
+    }
+    if (!items.length) return '';
+    return Court.svg({ uid, items, heat, labels: { top: 'Campo rival', bottom: 'Campo propio' } });
+  }
+
   function renderClips() {
     const m = match(); if (!m) return;
     const acts = filteredActions();
+    const map = mapFor(m, acts, 'cm', true);
+    $('#clipMap').innerHTML = map
+      ? `<div class="clip-map-wrap">${map}</div><div class="small muted">Clic en una flecha para ver ese clip. Quien ejecuta está siempre abajo.</div>`
+      : '';
     const ranges = clipRanges(acts);
     const counts = M.emptyCounts();
     acts.forEach((a) => { counts.total++; counts[a.eval]++; });
@@ -683,15 +799,41 @@
       return `<div class="r-section"><h2><span class="dot" style="background:${col}"></span>${esc(tk)} — total equipo</h2>
           ${statTable(agg, `${tk}|`, teamLink)}</div>` +
         players.map((pn, pi) => `<div class="r-section"><h2><span class="dot" style="background:${col}"></span>${esc(pn)} <span class="muted small">${esc(tk)}</span></h2>
-          ${statTable(agg, `${tk}|${pn}`, single ? { team: ti, player: pi + 1 } : null)}</div>`).join('');
+          ${statTable(agg, `${tk}|${pn}`, single ? { team: ti, player: pi + 1 } : null)}
+          ${playerMaps(rows.filter(({ a, m }) => a.player && teamName(m, a.team) === tk && playerName(m, a.team, a.player) === pn), single)}</div>`).join('');
     }).join('');
 
     body.innerHTML = header + `<div class="r-cards">${cards}</div>` + legend + sections;
   }
 
+  // Mapas de saque, ataque y recepción de un jugador (ejecutor siempre abajo).
+  function playerMaps(list, clickable) {
+    const blocks = [];
+    for (const [sk, title] of [['S', 'Saque'], ['A', 'Ataque'], ['R', 'Recepción']]) {
+      const sel = list.filter(({ a }) => a.skill === sk);
+      if (!sel.length) continue;
+      // cada acción con su partido, para derivar la ubicación de la recepción
+      const items = [], heat = { top: {}, bottom: {} };
+      let n = 0;
+      for (const { a, m } of sel) {
+        const l = locOf(m, a);
+        if (!l.from && !l.to) continue;
+        n++;
+        const from = toActorView(l.from, a.team), to = toActorView(l.to, a.team);
+        items.push({ id: clickable ? a.id : '', from, to, ev: a.eval });
+        const p = M.DIRECTIONAL[sk] ? to : from;
+        if (p) { const side = p.y < M.COURT.NET ? 'top' : 'bottom'; const z = M.zoneOf(p); heat[side][z] = (heat[side][z] || 0) + 1; }
+      }
+      if (!n) continue;
+      blocks.push(`<figure class="r-map"><figcaption>${title} <span class="muted">${n}/${sel.length} con zona</span></figcaption>
+        ${Court.svg({ uid: 'rm' + Math.random().toString(36).slice(2, 7), items, heat, labels: { top: 'Rival', bottom: '' } })}</figure>`);
+    }
+    return blocks.length ? `<div class="r-maps">${blocks.join('')}</div>` : '';
+  }
+
   function openClipsFromReport(link) {
     const f = ui.filters;
-    f.players.clear(); f.skills.clear(); f.evals.clear(); f.types.clear(); f.sets.clear();
+    f.players.clear(); f.skills.clear(); f.evals.clear(); f.types.clear(); f.sets.clear(); f.zones.clear();
     if (link.player) f.players.add(`${link.team}|${link.player}`);
     else { f.players.add(`${link.team}|1`); f.players.add(`${link.team}|2`); }
     if (link.skill) f.skills.add(link.skill);
@@ -890,12 +1032,13 @@
   }
   function exportCsv() {
     const m = match(); if (!m) return;
-    const head = ['partido', 'fecha', 'set', 'tiempo_s', 'equipo', 'jugador', 'fundamento', 'tipo', 'evaluacion', 'codigo', 'nota'];
+    const head = ['partido', 'fecha', 'set', 'tiempo_s', 'equipo', 'jugador', 'fundamento', 'tipo', 'evaluacion', 'codigo', 'nota', 'zona_inicio', 'zona_destino', 'x_inicio', 'y_inicio', 'x_destino', 'y_destino'];
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [head.join(',')].concat(m.actions.map((a) => [
       m.name, m.date, a.set, a.t, teamName(m, a.team), a.player ? playerName(m, a.team, a.player) : '',
       a.skill === 'P' ? 'Punto' : M.SKILLS[a.skill].name, a.type ? M.TYPES[a.skill][a.type] : '',
       a.eval, M.actionCode(a), a.note || '',
+      M.zoneOf(a.from) || '', M.zoneOf(a.to) || '', a.from ? a.from.x : '', a.from ? a.from.y : '', a.to ? a.to.x : '', a.to ? a.to.y : '',
     ].map(q).join(',')));
     download(fileSafe(m) + '.csv', '﻿' + lines.join('\n'), 'text/csv');
   }
@@ -947,6 +1090,9 @@
       Equipo <code>*</code> = local, <code>a</code> = visita. Atajo: jugadores <code>3</code> y <code>4</code> = visita 1 y 2.</p>
       <p>Ejemplos: <code>*1R#</code> recepción perfecta del local 1 · <code>a2AC+</code> ataque de corte positivo de visita 2 ·
       <code>3SQ=</code> error de saque en salto de visita 1 · <code>*P</code> punto manual para el local.</p>
+      <p><b>Zonas</b> (opcional, al final): inicio y destino 1–9 como en Data Volley. <code>*1AC#35</code> ataque de zona 3 a zona 5 ·
+      <code>*1A#05</code> sólo destino · <code>*2R#6</code> recepción en zona 6. Zonas vistas por cada equipo mirando la red:
+      4-3-2 delanteras, 7-8-9 medias, 5-6-1 zagueras. También puedes marcarlas en la cancha 🎯 (arrastrar = inicio → destino).</p>
       <table><tr><th>Letra</th><th>Fundamento</th><th>Tipos</th></tr>${skills}</table>
       <table>${evals}</table>
       <p class="small"><b>Eficiencia:</b> Saque (# − =)/tot · Recepción (# + + − / − =)/tot · Ataque (# − / − =)/tot · Resto (# + + − =)/tot.<br>
@@ -1067,7 +1213,7 @@
       const m = match(); const a = m.actions.find((x) => x.id === row.dataset.id); if (!a) return;
       const op = e.target.dataset.op;
       if (op === 'del') {
-        m.actions = m.actions.filter((x) => x.id !== a.id); save();
+        m.actions = m.actions.filter((x) => x.id !== a.id); save(); renderCourtInput();
         renderActions(); renderScore(); renderFilters(); renderClips();
       } else if (op === 'retime') {
         a.t = Math.round((video.currentTime || 0) * 100) / 100;
@@ -1076,6 +1222,11 @@
         const n = prompt(`Nota para ${M.actionCode(a)} (${describe(m, a)}):`, a.note || '');
         if (n === null) return;
         a.note = n.trim(); save(); renderActions(); renderClips();
+      } else if (op === 'court') {
+        if (a.skill === 'P') return;
+        ui.courtTarget = a.id; ui.courtWaiting = false; renderCourtInput();
+        $('#courtBox').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        toast(`Marca en la cancha: ${describe(m, a)}`);
       } else if (op === 'play') {
         playSingle(a);
       } else if (!e.target.classList.contains('c') && video.src) {
@@ -1094,6 +1245,11 @@
       const p = M.parseCode(e.target.value);
       if (p.error) { toast('Código inválido: ' + p.error); e.target.value = M.actionCode(a); return; }
       Object.assign(a, { team: p.team, player: p.player, skill: p.skill, type: p.type, eval: p.eval });
+      // zonas del código: se conserva el punto exacto si la zona no cambió
+      for (const k of ['from', 'to']) {
+        if (!p[k]) delete a[k];
+        else if (!a[k] || M.zoneOf(a[k]) !== M.zoneOf(p[k])) a[k] = p[k];
+      }
       save(); renderActions(); renderScore(); renderClips(); toast('Acción actualizada');
     });
 
@@ -1108,7 +1264,7 @@
       stopPlaylist(); renderFilters(); renderClips();
     });
     chipHandler('#fPlayers', 'players'); chipHandler('#fSkills', 'skills'); chipHandler('#fEvals', 'evals');
-    chipHandler('#fTypes', 'types'); chipHandler('#fSets', 'sets');
+    chipHandler('#fTypes', 'types'); chipHandler('#fSets', 'sets'); chipHandler('#fZones', 'zones');
     $('#skipGap').onchange = () => { store.settings.merge = $('#skipGap').checked; save(); stopPlaylist(); renderClips(); };
     $('#clipTimesGrid').addEventListener('change', (e) => {
       const inp = e.target.closest('[data-skill]'); if (!inp) return;
@@ -1164,6 +1320,46 @@
       else if (op.dataset.op === 'png') downloadCapturePng(rec);
       else if (op.dataset.op === 'del' && confirm('¿Eliminar esta corrección?')) deleteCapture(rec);
     });
+
+    // cancha: arrastrar = inicio → destino, clic = destino / lugar
+    const cwrap = $('#courtSvgWrap');
+    cwrap.addEventListener('pointerdown', (e) => {
+      const svgEl = e.target.closest('svg'); if (!svgEl) return;
+      e.preventDefault();
+      const m = match();
+      ui.courtDrag = { from: Court.pointFromEvent(svgEl, e, !!m.courtFlip) };
+      cwrap.setPointerCapture(e.pointerId);
+    });
+    cwrap.addEventListener('pointermove', (e) => {
+      if (!ui.courtDrag) return;
+      const svgEl = cwrap.querySelector('svg'); const m = match();
+      const to = Court.pointFromEvent(svgEl, e, !!m.courtFlip);
+      if (Math.hypot(to.x - ui.courtDrag.from.x, to.y - ui.courtDrag.from.y) > 0.4) renderCourtInput({ from: ui.courtDrag.from, to });
+    });
+    cwrap.addEventListener('pointerup', (e) => {
+      if (!ui.courtDrag) return;
+      const svgEl = cwrap.querySelector('svg'); const m = match();
+      const to = Court.pointFromEvent(svgEl, e, !!m.courtFlip);
+      const from = ui.courtDrag.from; ui.courtDrag = null;
+      setCourtPoints(from, to);
+    });
+    cwrap.addEventListener('pointercancel', () => { ui.courtDrag = null; renderCourtInput(); });
+    $('#btnCourtFlip').onclick = () => { const m = match(); m.courtFlip = !m.courtFlip; save(); renderCourtInput(); };
+    $('#btnCourtClear').onclick = () => {
+      const m = match(); const a = courtTargetAction(m); if (!a) return;
+      delete a.from; delete a.to; ui.courtWaiting = false;
+      save(); renderCourtInput(); renderActions(); renderFilters(); renderClips();
+    };
+    $('#askS').onchange = (e) => { store.settings.askDir.S = e.target.checked; save(); };
+    $('#askA').onchange = (e) => { store.settings.askDir.A = e.target.checked; save(); };
+    // flechas clicables (mapa de clips y reporte) → ver ese clip
+    const playFromMap = (e) => {
+      const g = e.target.closest('g.hit[data-id]'); if (!g || !g.dataset.id) return;
+      const m = match(); const a = m.actions.find((x) => x.id === g.dataset.id); if (!a) return;
+      setView('scout'); playSingle(a);
+    };
+    $('#clipMap').addEventListener('click', playFromMap);
+    $('#reportBody').addEventListener('click', playFromMap);
 
     // editor de teclas
     $('#btnKeys').onclick = () => { keyCapture = null; renderKeysDialog(); $('#keysDialog').showModal(); };
@@ -1294,6 +1490,7 @@
 
   function undo() {
     const m = match(); if (!m) return;
+    setTimeout(renderCourtInput, 0);
     let a = null;
     while (ui.undo.length && !a) { const id = ui.undo.pop(); a = m.actions.find((x) => x.id === id) || null; }
     if (!a) { toast('Nada que deshacer'); return; }

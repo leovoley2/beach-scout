@@ -54,6 +54,8 @@
   //   equipo  : * (local) | a (visita)      — opcional si el jugador es 3 o 4
   //   jugador : 1 | 2   (3 = visita 1, 4 = visita 2 como atajo)
   //   Ej.: *1R#   a2AC+   3S=   4AH#
+  //   zonas opcionales al final (Data Volley): inicio y destino, 1-9 (0 = sin inicio)
+  //   Ej.: *1AC#35 = ataque de corte de zona 3 a zona 5 · a1SQ+15 · *2R#6 (recepción en zona 6)
   // Punto manual:  *P  |  aP
   function parseCode(raw) {
     const code = String(raw || '').trim().replace(/\s+/g, '');
@@ -62,8 +64,8 @@
     let m = /^([*aA])[pP]$/.exec(code);
     if (m) return { team: m[1] === '*' ? 0 : 1, skill: 'P', player: 0, type: '', eval: '' };
 
-    m = /^([*aA])?([1-4])([a-zA-Z])([a-zA-Z])?([#+!\-/=])$/.exec(code);
-    if (!m) return { error: 'Formato: *1R#, a2AC+, 3S=' };
+    m = /^([*aA])?([1-4])([a-zA-Z])([a-zA-Z])?([#+!\-/=])([0-9])?([1-9])?$/.exec(code);
+    if (!m) return { error: 'Formato: *1R#, a2AC+, 3S=, zonas: *1AC#35' };
 
     let team = m[1] ? (m[1] === '*' ? 0 : 1) : null;
     let player = Number(m[2]);
@@ -80,12 +82,60 @@
       const valid = Object.keys(TYPES[skill]).join(' ') || 'ninguno';
       return { error: `Tipo "${type}" no válido para ${SKILLS[skill].name} (${valid})` };
     }
-    return { team, player, skill, type, eval: m[5] };
+    const out = { team, player, skill, type, eval: m[5] };
+    const z1 = m[6] ? Number(m[6]) : 0, z2 = m[7] ? Number(m[7]) : 0;
+    if (z1 === 0 && m[6] && !z2) return { error: 'Zona 0 sólo vale como inicio desconocido (ej. 05)' };
+    if (z1 || z2) {
+      const own = team === 0;             // cancha guardada: local abajo, visita arriba
+      if (DIRECTIONAL[skill]) {
+        if (z1) out.from = zoneCenter(z1, own, skill === 'S');
+        if (z2) out.to = zoneCenter(z2, !own);
+      } else {
+        if (z2) return { error: `${SKILLS[skill].name} lleva una sola zona (dónde ocurre)` };
+        out.from = zoneCenter(z1, own);
+      }
+    }
+    return out;
   }
 
   function actionCode(a) {
     if (a.skill === 'P') return TEAMS[a.team] + 'P';
-    return TEAMS[a.team] + a.player + a.skill + (a.type || '') + a.eval;
+    let z = '';
+    if (DIRECTIONAL[a.skill]) { if (a.to) z = String(zoneOf(a.from) || 0) + zoneOf(a.to); else if (a.from) z = String(zoneOf(a.from)); }
+    else if (a.from) z = String(zoneOf(a.from));
+    return TEAMS[a.team] + a.player + a.skill + (a.type || '') + a.eval + z;
+  }
+
+  // --- Cancha y zonas -------------------------------------------------------
+  // Coordenadas en metros. Cancha de playa 8 × 16 m, red en y = 8.
+  // Se guarda siempre con el LOCAL abajo (y 8–16) y la VISITA arriba (y 0–8);
+  // "invertir cancha" sólo cambia cómo se dibuja, no lo guardado.
+  const COURT = { W: 8, L: 16, NET: 8 };
+  const DIRECTIONAL = { S: true, A: true };          // llevan inicio → destino
+  // Zonas vistas por el equipo que ocupa esa mitad, mirando la red (igual que Data Volley).
+  const ZONE_GRID = [[4, 3, 2], [7, 8, 9], [5, 6, 1]]; // fila: delantera, media, zaguera · col: izq, centro, der
+
+  function zoneOf(p) {
+    if (!p) return null;
+    let x = p.x, y = p.y;
+    if (y < COURT.NET) { x = COURT.W - x; y = COURT.L - y; } // mitad de arriba: girar 180°
+    const t = COURT.W / 3;
+    const col = Math.max(0, Math.min(2, Math.floor(x / t)));
+    const row = Math.max(0, Math.min(2, Math.floor((y - COURT.NET) / t)));
+    return ZONE_GRID[row][col];
+  }
+  function isOut(p) { return !!p && (p.x < 0 || p.x > COURT.W || p.y < 0 || p.y > COURT.L); }
+
+  // Centro de una zona en la mitad de abajo (bottom=true) o de arriba.
+  // serveLine=true: para el inicio de un saque se ubica detrás de la línea de fondo.
+  function zoneCenter(z, bottom, serveLine) {
+    let row = 0, col = 0;
+    ZONE_GRID.forEach((r, ri) => r.forEach((v, ci) => { if (v === z) { row = ri; col = ci; } }));
+    const t = COURT.W / 3;
+    let x = (col + 0.5) * t, y = COURT.NET + (row + 0.5) * t;
+    if (serveLine) y = COURT.L + 1;
+    if (!bottom) { x = COURT.W - x; y = COURT.L - y; }
+    return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
   }
 
   // --- Marcador y rallies ---------------------------------------------------
@@ -189,6 +239,7 @@
 
   window.Model = {
     TEAMS, SKILLS, SKILL_ORDER, TYPES, EVALS, EVAL_NAME, EVAL_MEANING,
+    COURT, DIRECTIONAL, zoneOf, zoneCenter, isOut,
     parseCode, actionCode, rallyWinner, computeRallies, computeScore, computePhases,
     emptyCounts, metrics, aggregate,
   };

@@ -7,7 +7,7 @@
 <meta name="description" content="Scouting en video para voleibol de playa: registra acciones, filtra clips por jugador y evaluación, genera reportes y dibuja correcciones. Los videos nunca salen de tu computadora.">
 <meta name="theme-color" content="#0f1418">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/styles.css?v=10">
+<link rel="stylesheet" href="css/styles.css?v=13">
 </head>
 <body>
 <header class="topbar">
@@ -102,6 +102,20 @@
         <button id="btnUndo" class="btn small ghost" title="Ctrl/Cmd+Z">Deshacer</button>
       </div>
 
+      <div class="group-label">🎯 Dirección / zona</div>
+      <div id="courtBox" class="court-box">
+        <div id="courtSvgWrap" class="court-wrap"></div>
+        <div class="court-side">
+          <div id="courtTarget" class="small"></div>
+          <div id="courtHint" class="small court-hint"></div>
+          <button type="button" id="btnCourtFlip" class="btn small" title="Úsalo cuando los equipos cambien de lado, para que la cancha coincida con el video">⇅ Invertir cancha</button>
+          <button type="button" id="btnCourtClear" class="btn small ghost">Borrar dirección</button>
+          <div class="small muted">Pedir dirección tras:<br>
+            <label><input type="checkbox" id="askS"> Saque</label>
+            <label><input type="checkbox" id="askA"> Ataque</label></div>
+        </div>
+      </div>
+
       <div class="group-label row">Acciones <span id="actionCount" class="muted"></span></div>
       <div id="actionList" class="action-list"></div>
     </div>
@@ -126,6 +140,10 @@
           <div id="fTypes" class="chips"></div>
           <div id="fSets" class="chips"></div>
         </div>
+        <div class="filter">
+          <div class="group-label">Zona <span class="muted">(destino en saque/ataque, lugar en el resto)</span></div>
+          <div id="fZones" class="chips zones"></div>
+        </div>
         <details class="clip-times">
           <summary>⏱ Duración de clips por fundamento</summary>
           <p class="small muted">Cada clip va desde <b>Antes</b> segundos previos al momento registrado (cuando pulsas el jugador)
@@ -143,6 +161,7 @@
         <button id="btnExportVideo" class="btn small" title="Une los clips filtrados en un video para enviar">⬇️ Descargar video</button>
         <button id="btnFfmpeg" class="btn ghost small" title="Avanzado: script para cortar los clips con ffmpeg en la terminal">ffmpeg</button>
       </div>
+      <div id="clipMap" class="clip-map"></div>
       <div id="clipSummary" class="clip-summary"></div>
       <div id="clipList" class="action-list"></div>
     </div>
@@ -297,11 +316,12 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="js/model.js?v=10"></script>
-<script src="js/keymap.js?v=10"></script>
-<script src="js/db.js?v=10"></script>
-<script src="js/annotate.js?v=10"></script>
-<script src="js/exporter.js?v=10"></script>
-<script src="js/app.js?v=10"></script>
+<script src="js/model.js?v=13"></script>
+<script src="js/keymap.js?v=13"></script>
+<script src="js/court.js?v=13"></script>
+<script src="js/db.js?v=13"></script>
+<script src="js/annotate.js?v=13"></script>
+<script src="js/exporter.js?v=13"></script>
+<script src="js/app.js?v=13"></script>
 </body>
 </html>

@@ -48,6 +48,20 @@ Ej.: `3` `R` `1` = recepción doble positiva de visita 1. `Esc` cancela, `⌫` r
 tiene que ser única dentro de su etapa; si repites una, se marca en rojo. Puedes **exportar** tu
 configuración y pasarla a otro analista, o **restaurar** las teclas por defecto.
 
+## Zonas y direcciones en la cancha
+
+- Debajo de las evaluaciones hay una **cancha 🎯**. Tras un saque o ataque queda esperando la dirección:
+  **arrastra** desde dónde sale hasta dónde va (un clic marca sólo el destino). Para el resto de fundamentos,
+  un clic marca dónde ocurrió. Si pasas a la siguiente acción o pulsas Esc, se omite.
+- La **recepción** toma sola el destino del saque que recibe (y la defensa, el del ataque rival).
+- **⇅ Invertir cancha** cuando los equipos cambien de lado, para que coincida con el video.
+- Zonas 1–9 como Data Volley (vistas por cada equipo mirando la red): 4-3-2 delanteras, 7-8-9 medias,
+  5-6-1 zagueras. También en el código: `*1AC#35` (de zona 3 a 5), `*1A#05` (sólo destino), `*2R#6`.
+- 🎯 en cada acción de la lista para marcar o corregir su dirección después.
+- **Clips**: filtro por zona y mapa de los clips filtrados (clic en una flecha = ver ese clip).
+- **Reporte**: mapas de saque, ataque y recepción por jugador, con flechas por evaluación y zonas
+  sombreadas según la frecuencia.
+
 ## Correcciones visuales
 
 - **📷 Capturar** (o tecla `C`) congela el fotograma actual y abre la pizarra. La captura se vincula sola
@@ -86,6 +100,7 @@ cortar los clips en la terminal (requiere `brew install ffmpeg`).
 - `index.html` — interfaz
 - `js/model.js` — códigos, marcador, rallies, estadísticas
 - `js/keymap.js` — teclas por defecto, conflictos y formato
+- `js/court.js` — cancha SVG: zonas, flechas y mapa de calor
 - `js/app.js` — video, registro, clips, reporte, correcciones
 - `js/annotate.js` — pizarra de dibujo sobre el fotograma
 - `js/db.js` — almacenamiento de capturas
