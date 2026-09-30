@@ -24,6 +24,9 @@ aunque uses la versión web, se reproduce desde tu computadora.
    Ej.: Juan + Recepción + `=` → todas las recepciones doble negativas de Juan, una tras otra.
    Cada fundamento tiene su propio margen (*⏱ Duración de clips por fundamento*): por defecto un ataque
    arranca 2 s antes, así se ve el armado y no el saque rival.
+   **⬇️ Descargar video** une los clips filtrados en un MP4 listo para WhatsApp, con portada y rótulo
+   (jugador, fundamento, evaluación y nota del entrenador). El ⬇ de cada clip baja sólo ese clip.
+   Se genera en el navegador, en tiempo real (1 min de clips ≈ 1 min); no cambies de pestaña mientras exporta.
 5. **Reporte**: tabla por equipo y por jugador con `# + ! - / =`, Pos%, #%, Err%, Eficiencia,
    side-out y break point. **Clic en cualquier número abre esos clips.** Imprimible a PDF.
 
@@ -75,8 +78,8 @@ Tipos de saque: `Q` salto potente, `M` salto flotado, `H` flotado. Tipos de ataq
 ## Datos
 
 Se guardan en el navegador (acciones en localStorage, capturas en IndexedDB). Usa **Exportar → .json** (incluye las capturas) como respaldo o para pasar
-partidos a otra computadora, y **.csv** para Excel. *Exportar video (ffmpeg)* genera un script que
-corta y une los clips filtrados en un solo MP4 (requiere `brew install ffmpeg`).
+partidos a otra computadora, y **.csv** para Excel. El botón *ffmpeg* (avanzado) genera un script para
+cortar los clips en la terminal (requiere `brew install ffmpeg`).
 
 ## Estructura
 
@@ -86,6 +89,7 @@ corta y une los clips filtrados en un solo MP4 (requiere `brew install ffmpeg`).
 - `js/app.js` — video, registro, clips, reporte, correcciones
 - `js/annotate.js` — pizarra de dibujo sobre el fotograma
 - `js/db.js` — almacenamiento de capturas
+- `js/exporter.js` — exportación de clips a MP4 en el navegador
 - `css/styles.css`
 - `icon.svg` — ícono
 

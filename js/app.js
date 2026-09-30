@@ -402,7 +402,7 @@
         <span class="t">${i + 1}. ${fmtTime(r.start).slice(0, 5)}</span>
         <span class="c">${r.actions.map((a) => esc(M.actionCode(a))).join(' ')}</span>
         <span class="d">${r.actions.length === 1 ? esc(describe(m, r.actions[0])) : r.actions.length + ' acciones'}</span>
-        <span class="ops"><button data-op="play">▶</button></span>
+        <span class="ops"><button data-op="play" title="Ver">▶</button><button data-op="dl" title="Descargar este clip">⬇</button></span>
       </div>`).join('') || '<div class="muted small">Ninguna acción coincide con los filtros.</div>';
   }
 
@@ -465,6 +465,94 @@
       'echo "Listo: $OUT"',
     ];
     download(`${label}.sh`, lines.join('\n') + '\n', 'text/x-shellscript');
+  }
+
+  // ------------------------------------------------------ descargar video
+  const exportState = { ranges: [], running: false, signal: null, file: null };
+
+  function filtersTitle() {
+    const m = match(), f = ui.filters;
+    const parts = [
+      [...f.players].map((k) => { const [t, p] = k.split('|').map(Number); return playerName(m, t, p); }).join(' y '),
+      [...f.skills].map((s) => M.SKILLS[s].name).join(' y '),
+      [...f.types].map((t) => M.TYPES[t[0]][t.slice(1)]).join(' y '),
+      [...f.evals].map((e) => M.EVAL_NAME[e]).join(' y '),
+    ].filter(Boolean);
+    return parts.join(' · ') || 'Clips del partido';
+  }
+
+  function rangeLabel(m, r) {
+    const a0 = r.actions[0];
+    const main = r.actions.length === 1
+      ? `${describe(m, a0)} (${a0.eval})`
+      : r.actions.map((a) => `${a.eval} ${playerName(m, a.team, a.player)} ${M.SKILLS[a.skill].short}`).join('  |  ');
+    const note = r.actions.map((a) => a.note).filter(Boolean).join(' · ');
+    return { main, note, color: a0.team ? '#e0562f' : '#2f9be0' };
+  }
+
+  function openExport(ranges, title) {
+    if (!video.src) { toast('Primero abre el video del partido'); return; }
+    if (!ranges.length) { toast('No hay clips con esos filtros'); return; }
+    if (!ClipExporter.pickType()) { toast('Este navegador no puede crear videos. Usa Chrome o Safari actualizados.'); return; }
+    stopPlaylist(); video.pause();
+    exportState.ranges = ranges; exportState.file = null;
+    const dur = ranges.reduce((s, r) => s + (r.end - r.start), 0);
+    $('#expInfo').textContent = `${ranges.length} clip(s) · ${fmtTime(dur).slice(0, 5)} de video · formato ${ClipExporter.pickType().ext.toUpperCase()} · tardará ~${Math.ceil(dur + 3)} s`;
+    $('#expTitle').value = title;
+    $('#expTitleCard').checked = ranges.length > 1;
+    $('#expForm').classList.remove('hidden');
+    $('#expProgress').classList.add('hidden');
+    $('#expDone').classList.add('hidden');
+    $('#expStart').classList.remove('hidden');
+    $('#expCancel').textContent = 'Cerrar';
+    $('#exportDialog').showModal();
+  }
+
+  async function runExport() {
+    const m = match();
+    const title = $('#expTitle').value.trim() || 'Clips';
+    exportState.running = true; exportState.signal = { cancelled: false };
+    $('#expForm').classList.add('hidden'); $('#expStart').classList.add('hidden');
+    $('#expProgress').classList.remove('hidden'); $('#expCancel').textContent = 'Cancelar';
+    $('#expBar').style.width = '0%'; $('#expStatus').textContent = 'Preparando…';
+    try {
+      const res = await ClipExporter.run({
+        src: video.src,
+        ranges: exportState.ranges,
+        labels: exportState.ranges.map((r) => rangeLabel(m, r)),
+        title, subtitle: `${teamName(m, 0)} vs ${teamName(m, 1)} · ${m.date}${m.name && m.name !== 'Partido' ? ' · ' + m.name : ''}`,
+        titleCard: $('#expTitleCard').checked, overlay: $('#expOverlay').checked,
+        maxHeight: Number($('#expQuality').value),
+        signal: exportState.signal,
+        onProgress: (p, text) => { $('#expBar').style.width = `${Math.round(p * 100)}%`; $('#expStatus').textContent = `${text} · ${Math.round(p * 100)}%`; },
+      });
+      exportState.running = false;
+      $('#expProgress').classList.add('hidden');
+      if (!res) { toast('Exportación cancelada'); $('#exportDialog').close(); return; }
+      const name = title.replace(/\s*·\s*/g, ' - ').replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80) + '.' + res.ext;
+      exportState.file = new File([res.blob], name, { type: res.blob.type });
+      saveBlob(exportState.file);
+      const canShare = navigator.canShare && navigator.canShare({ files: [exportState.file] });
+      $('#expDone').innerHTML = `<p>✅ <b>${esc(name)}</b> · ${(res.blob.size / 1048576).toFixed(1)} MB — se descargó a tu carpeta de Descargas.</p>
+        <div class="row gap"><button type="button" class="btn" id="expAgain">Descargar otra vez</button>
+        ${canShare ? '<button type="button" class="btn primary" id="expShare">Compartir…</button>' : ''}</div>`;
+      $('#expDone').classList.remove('hidden');
+      $('#expCancel').textContent = 'Cerrar';
+      $('#expAgain').onclick = () => saveBlob(exportState.file);
+      if (canShare) $('#expShare').onclick = () => navigator.share({ files: [exportState.file], title }).catch(() => {});
+    } catch (err) {
+      exportState.running = false;
+      $('#expProgress').classList.add('hidden');
+      $('#expDone').innerHTML = `<p class="bad">No se pudo crear el video: ${esc(err.message || err)}</p>`;
+      $('#expDone').classList.remove('hidden');
+      $('#expCancel').textContent = 'Cerrar';
+    }
+  }
+
+  function saveBlob(file) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file); a.download = file.name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
   }
 
   // ---------------------------------------------------------------- reporte
@@ -1038,7 +1126,18 @@
     $('#btnFfmpeg').onclick = ffmpegScript;
     $('#clipList').addEventListener('click', (e) => {
       const row = e.target.closest('[data-clip]'); if (!row) return;
-      startPlaylist(Number(row.dataset.clip));
+      const i = Number(row.dataset.clip);
+      if (e.target.dataset.op === 'dl') {
+        const r = clipRanges(filteredActions())[i];
+        if (r) openExport([r], r.actions.length === 1 ? describe(match(), r.actions[0]) : `Clip ${i + 1}`);
+      } else startPlaylist(i);
+    });
+    $('#btnExportVideo').onclick = () => openExport(clipRanges(filteredActions()), filtersTitle());
+    $('#expStart').onclick = runExport;
+    $('#expCancel').onclick = () => { if (exportState.running) exportState.signal.cancelled = true; else $('#exportDialog').close(); };
+    $('#exportDialog').addEventListener('cancel', (e) => {
+      if (exportState.running && !confirm('¿Cancelar la exportación?')) { e.preventDefault(); return; }
+      if (exportState.running) exportState.signal.cancelled = true;
     });
 
     // reporte

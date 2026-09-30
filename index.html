@@ -7,7 +7,7 @@
 <meta name="description" content="Scouting en video para voleibol de playa: registra acciones, filtra clips por jugador y evaluación, genera reportes y dibuja correcciones. Los videos nunca salen de tu computadora.">
 <meta name="theme-color" content="#0f1418">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="css/styles.css?v=8">
+<link rel="stylesheet" href="css/styles.css?v=10">
 </head>
 <body>
 <header class="topbar">
@@ -140,7 +140,8 @@
         <button id="btnStopAll" class="btn ghost">■ Detener</button>
         <button id="btnClearFilters" class="btn ghost small">Limpiar filtros</button>
         <div class="spacer"></div>
-        <button id="btnFfmpeg" class="btn ghost small" title="Script para cortar y unir los clips en un solo video">Exportar video (ffmpeg)</button>
+        <button id="btnExportVideo" class="btn small" title="Une los clips filtrados en un video para enviar">⬇️ Descargar video</button>
+        <button id="btnFfmpeg" class="btn ghost small" title="Avanzado: script para cortar los clips con ffmpeg en la terminal">ffmpeg</button>
       </div>
       <div id="clipSummary" class="clip-summary"></div>
       <div id="clipList" class="action-list"></div>
@@ -242,6 +243,34 @@
   </form>
 </dialog>
 
+<dialog id="exportDialog" class="export-dialog">
+  <h2>⬇️ Descargar video de clips</h2>
+  <div id="expInfo" class="small muted"></div>
+  <div id="expForm" class="export-form">
+    <label>Título <input id="expTitle" maxlength="80"></label>
+    <label class="check"><input type="checkbox" id="expTitleCard" checked> Portada con el título (2 s)</label>
+    <label class="check"><input type="checkbox" id="expOverlay" checked> Rótulo en cada clip: jugador, fundamento, evaluación y tu nota 💬</label>
+    <label>Calidad
+      <select id="expQuality">
+        <option value="720" selected>720p — recomendado para WhatsApp</option>
+        <option value="1080">1080p</option>
+        <option value="4320">Original</option>
+      </select>
+    </label>
+  </div>
+  <div id="expProgress" class="export-progress hidden">
+    <div class="bar"><span id="expBar"></span></div>
+    <div id="expStatus" class="small"></div>
+    <p class="small muted">Se graba en tiempo real. <b>No cambies de pestaña</b> mientras exporta (si lo haces, se pausa).</p>
+  </div>
+  <div id="expDone" class="export-done hidden"></div>
+  <div class="row gap">
+    <div class="spacer"></div>
+    <button type="button" id="expCancel" class="btn ghost">Cerrar</button>
+    <button type="button" id="expStart" class="btn primary">Crear video</button>
+  </div>
+</dialog>
+
 <dialog id="keysDialog" class="keys-dialog">
   <h2>⌨️ Teclas de scouting</h2>
   <p class="small muted">Haz clic en una tecla y presiona la nueva. El registro va por etapas
@@ -268,10 +297,11 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="js/model.js?v=8"></script>
-<script src="js/keymap.js?v=8"></script>
-<script src="js/db.js?v=8"></script>
-<script src="js/annotate.js?v=8"></script>
-<script src="js/app.js?v=8"></script>
+<script src="js/model.js?v=10"></script>
+<script src="js/keymap.js?v=10"></script>
+<script src="js/db.js?v=10"></script>
+<script src="js/annotate.js?v=10"></script>
+<script src="js/exporter.js?v=10"></script>
+<script src="js/app.js?v=10"></script>
 </body>
 </html>
